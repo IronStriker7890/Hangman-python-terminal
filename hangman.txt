@@ -1,0 +1,258 @@
+import random
+import os
+import sys
+import time
+
+DEFAULT_WORDS = [
+    "python", "developer", "hangman", "challenge", "terminal", "keyboard",
+    "function", "variable", "exception", "internet", "computer", "algorithm",
+    "condition", "iteration", "package", "module", "syntax", "string"
+]
+MAX_WRONG = 6
+
+HANGMAN_STAGES = [
+    r"""
+     +---+
+     |   |
+         |
+         |
+         |
+         |
+    =======
+    """,
+    r"""
+     +---+
+     |   |
+     O   |
+         |
+         |
+         |
+    =======
+    """,
+    r"""
+     +---+
+     |   |
+     O   |
+     |   |
+         |
+         |
+    =======
+    """,
+    r"""
+     +---+
+     |   |
+     O   |
+    /|   |
+         |
+         |
+    =======
+    """,
+    r"""
+     +---+
+     |   |
+     O   |
+    /|\  |
+         |
+         |
+    =======
+    """,
+    r"""
+     +---+
+     |   |
+     O   |
+    /|\  |
+    /    |
+         |
+    =======
+    """,
+    r"""
+     +---+
+     |   |
+     O   |
+    /|\  |
+    / \  |
+         |
+    =======
+    """
+]
+
+# ------------------ Utility Functions ------------------
+
+def clear_screen():
+    """Clear terminal screen (cross-platform)."""
+    if os.name == 'nt':
+        os.system('cls')
+    else:
+        os.system('clear')
+
+
+class Ansi:
+    """Simple ANSI color codes."""
+    B = '\u001b[1m'
+    R = '\u001b[31m'
+    G = '\u001b[32m'
+    Y = '\u001b[33m'
+    C = '\u001b[36m'
+    END = '\u001b[0m'
+
+
+def supports_color() -> bool:
+    """Detect if terminal supports ANSI colors."""
+    if not sys.stdout.isatty():
+        return False
+    if os.name == 'nt':
+        return ('ANSICON' in os.environ or 
+                'WT_SESSION' in os.environ or 
+                os.getenv('TERM') == 'xterm')
+    return True
+
+COLOR = supports_color()
+
+
+def c(text: str, color: str) -> str:
+    """Color wrapper (fallback if unsupported)."""
+    if not COLOR:
+        return text
+    return f"{color}{text}{Ansi.END}"
+
+
+# ------------------ Game Logic ------------------
+
+def choose_word(wordbank=None):
+    """Pick a random word."""
+    wb = wordbank if wordbank else DEFAULT_WORDS
+    return random.choice(wb).lower()
+
+
+def display_state(secret, guessed_letters, wrong_guesses):
+    """Show current game state."""
+    clear_screen()
+    stage = min(len(HANGMAN_STAGES) - 1, wrong_guesses)
+    print(c(HANGMAN_STAGES[stage], Ansi.Y))
+
+    revealed = " ".join([ch if ch in guessed_letters else "_" for ch in secret])
+    print(c(f"Word: {revealed}", Ansi.C))
+    print()
+
+    guessed_display = ', '.join(sorted(guessed_letters)) if guessed_letters else "(none)"
+    wrong_list = sorted([ch for ch in guessed_letters if ch not in secret])
+
+    print(f"Guessed: {guessed_display}")
+    print(f"Wrong guesses ({wrong_guesses}/{MAX_WRONG}): {', '.join(wrong_list)}")
+    print()
+
+
+def get_guess(already_guessed):
+    """Ask user for a valid guess."""
+    while True:
+        try:
+            guess = input("Enter a letter (or type 'quit' to exit): ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\n" + c("Input interrupted. Exiting.", Ansi.Y))
+            sys.exit(0)
+
+        if guess == "quit":
+            print("Thanks for playing — goodbye!")
+            sys.exit(0)
+
+        if len(guess) != 1 or not guess.isalpha():
+            print(c("Please enter a single letter.", Ansi.Y))
+            continue
+
+        if guess in already_guessed:
+            print(c("You've already guessed that letter.", Ansi.Y))
+            continue
+
+        return guess
+
+
+def play_round(wordbank=None):
+    """Play one full game of Hangman."""
+    secret = choose_word(wordbank)
+    guessed = set()
+    wrong = 0
+
+    while True:
+        display_state(secret, guessed, wrong)
+
+        if all(ch in guessed for ch in secret):
+            print(c("CONGRATULATIONS! You guessed the word!", Ansi.G))
+            print(c(f"The word was: {secret}", Ansi.C))
+            break
+
+        if wrong >= MAX_WRONG:
+            display_state(secret, guessed, wrong)
+            print(c("BOOM! You've been hanged!", Ansi.R))
+            print(c(f"The word was: {secret}", Ansi.C))
+            break
+
+        g = get_guess(guessed)
+        guessed.add(g)
+        if g not in secret:
+            wrong += 1
+
+
+# ------------------ Optional Wordbank Loader ------------------
+
+def load_wordbank_from_file(path: str):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            words = []
+            for line in f:
+                w = line.strip()
+                if w and w.isalpha():
+                    words.append(w.lower())
+        return words
+    except Exception as e:
+        print(c(f"Could not load wordbank: {e}", Ansi.Y))
+        return None
+
+
+# ------------------ Main Program ------------------
+
+def main():
+    clear_screen()
+    print(c("Welcome to Terminal Hangman!", Ansi.B))
+    print("Try to guess the word, letter by letter.")
+    print("You have " + c(str(MAX_WRONG), Ansi.Y) + " wrong attempts.")
+    print()
+
+    wordbank = None
+    print("Options:")
+    print("  1) Play with default word list")
+    print("  2) Load words from a file (one per line)")
+    print("  3) Enter a custom single word")
+    choice = input("Choose 1, 2, or 3 (default 1): ").strip() or '1'
+
+    if choice == '2':
+        path = input("Path to word file: ").strip()
+        wb = load_wordbank_from_file(path)
+        if wb:
+            wordbank = wb
+        else:
+            print(c("Using default word list.", Ansi.Y))
+            time.sleep(1)
+
+    elif choice == '3':
+        w = input("Enter your custom word: ").strip().lower()
+        if w.isalpha():
+            wordbank = [w]
+        else:
+            print(c("Invalid word — using default list.", Ansi.Y))
+            time.sleep(1)
+
+    while True:
+        play_round(wordbank)
+        again = input("Play again? (y/n): ").strip().lower()
+        if again != 'y':
+            print(c("Thanks for playing Hangman!", Ansi.G))
+            break
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n" + c("Interrupted. Bye!", Ansi.Y))
+        sys.exit(0)
+1
